@@ -241,6 +241,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     }
                 }
 
+                if (_auxiliaryData.Count > 0)
+                {
+                    // check for any auxilliary data before reading a line
+                    Current = _auxiliaryData.Dequeue();
+                    return true;
+                }
+
                 // read in a line and then parse it using the data factory
                 var line = reader.ReadLine();
                 BaseData instance = null;

@@ -204,7 +204,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var barAfterPreviousEndTime = previous.EndTime + _fillForwardResolution;
             if (_exchange.IsOpenDuringBar(previous.EndTime, barAfterPreviousEndTime, _isExtendedMarketHours))
             {
-                // this is the normal case where we had a whole in the middle of the day
+                // this is the normal case where we had a hole in the middle of the day
                 fillForward = previous.Clone(true);
                 fillForward.Time = previous.Time + _fillForwardResolution;
                 return true;
