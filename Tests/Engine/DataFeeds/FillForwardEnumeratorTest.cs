@@ -599,5 +599,39 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             Assert.IsFalse(fillForwardEnumerator.MoveNext());
         }
+
+        [Test]
+        public void FillsForwardMissingDaysOnFillForwardResolutionOfAnHour()
+        {
+            var dataResolution = Time.OneDay;
+            var reference = new DateTime(2015, 6, 23);
+            var data = new BaseData[]
+            {
+                // thurs 6/24
+                new TradeBar{Value = 0, Time = reference, Period = dataResolution},
+                // fri 6/26
+                new TradeBar{Value = 1, Time = reference.AddDays(3), Period = dataResolution},
+            }.ToList();
+            var enumerator = data.GetEnumerator();
+
+            var exchange = new EquityExchange();
+            bool isExtendedMarketHours = false;
+            var ffResolution = TimeSpan.FromHours(1);
+            var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, ffResolution, isExtendedMarketHours, data.Last().EndTime, dataResolution);
+
+
+            int count = 0;
+            while (fillForwardEnumerator.MoveNext())
+            {
+                if (fillForwardEnumerator.Current.EndTime.TimeOfDay == TimeSpan.Zero)
+                {
+                    // add up all the daily bars
+                    count++;
+                }
+            }
+
+            // we expect 4 daily bars here
+            Assert.AreEqual(4, count);
+        }
     }
 }

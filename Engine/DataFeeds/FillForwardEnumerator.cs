@@ -225,6 +225,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 nextFillForwardTime = GetMarketOpen(nextFillForwardTime) + _fillForwardResolution;
             }
 
+            // special case for daily, we need to emit a midnight bar even though markets are closed
+            if (_dataResolution == Time.OneDay & nextFillForwardTime.Date > previous.EndTime.Date)
+            {
+                // if daily and if we've crossed over to a new date, emit a daily bar
+                var dailyBarEnd = nextFillForwardTime.Date;
+                if (dailyBarEnd < next.EndTime)
+                {
+                    fillForward = previous.Clone(true);
+                    fillForward.Time = dailyBarEnd - Time.OneDay;
+                    return true;
+                }
+            }
+
             if (nextFillForwardTime < next.EndTime)
             {
                 // if next is still in the future then we need to emit a fill forward for market open
