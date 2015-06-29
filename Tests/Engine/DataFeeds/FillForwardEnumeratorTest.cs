@@ -619,7 +619,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var ffResolution = TimeSpan.FromHours(1);
             var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, ffResolution, isExtendedMarketHours, data.Last().EndTime, dataResolution);
 
-
             int dailyBars = 0;
             int hourlyBars = 0;
             while (fillForwardEnumerator.MoveNext())

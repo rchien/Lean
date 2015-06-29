@@ -40,7 +40,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private List<SubscriptionDataConfig> _subscriptions;
         private readonly List<bool> _isDynamicallyLoadedData = new List<bool>();
         private IEnumerator<BaseData>[] _subscriptionManagers;
-        private ConcurrentQueue<List<BaseData>>[] _bridge;
         private bool _endOfBridges;
         private bool _isActive;
         private bool[] _endOfBridge;
@@ -49,7 +48,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private readonly object _lock = new object();
         private bool _exitTriggered;
         private List<string> _symbols = new List<string>();
-        private Dictionary<int, StreamStore> _streamStore = new Dictionary<int, StreamStore>();
+        private Dictionary<int, StreamStore> _streamStores = new Dictionary<int, StreamStore>();
         private List<decimal> _realtimePrices;
         private IDataQueueHandler _dataQueue;
 
@@ -111,7 +110,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             //Set Properties:
             _isActive = true;
             _dataFeed = DataFeedEndpoint.LiveTrading;
-            _bridge = new ConcurrentQueue<List<BaseData>>[Subscriptions.Count];
             _endOfBridge = new bool[Subscriptions.Count];
             _subscriptionManagers = new SubscriptionDataReader[Subscriptions.Count];
             _realtimePrices = new List<decimal>();
@@ -132,7 +130,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             for (var i = 0; i < Subscriptions.Count; i++)
             {
                 _endOfBridge[i] = false;
-                _bridge[i] = new ConcurrentQueue<List<BaseData>>();
 
                 //This is quantconnect data source, store here for speed/ease of access
                 var security = algorithm.Securities[_subscriptions[i].Symbol];
@@ -187,13 +184,16 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         select security.Symbol).ToList<string>();
 
             //Initialize:
-            _streamStore = new Dictionary<int, StreamStore>();
+            _streamStores = new Dictionary<int, StreamStore>();
             for (var i = 0; i < Subscriptions.Count; i++)
             {
                 var config = _subscriptions[i];
-                _streamStore.Add(i, new StreamStore(config, _algorithm.Securities[config.Symbol]));
+                if (config.Resolution != Resolution.Tick)
+                {
+                    _streamStores.Add(i, new StreamStore(config, _algorithm.Securities[config.Symbol]));
+                }
             }
-            Log.Trace(string.Format("LiveTradingDataFeed.Stream(): Initialized {0} stream stores.", _streamStore.Count));
+            Log.Trace(string.Format("LiveTradingDataFeed.Stream(): Initialized {0} stream stores.", _streamStores.Count));
 
             // Set up separate thread to handle stream and building packets:
             var streamThread = new Thread(StreamStoreConsumer);
@@ -213,6 +213,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 var items = new Dictionary<int, List<BaseData>>();
                 for (var i = 0; i < Subscriptions.Count; i++)
                 {
+                    // stream stores are only created for tick data and this timer thread is used
+                    // soley for dequeuing from the stream stores, this index, i, would be null
+                    if (Subscriptions[i].Resolution == Resolution.Tick) continue;
+
                     bool triggerArchive = false;
                     switch (_subscriptions[i].Resolution)
                     {
@@ -232,11 +236,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                     if (triggerArchive)
                     {
-                        _streamStore[i].TriggerArchive(triggerTime, _subscriptions[i].FillDataForward);
+                        _streamStores[i].TriggerArchive(triggerTime, _subscriptions[i].FillDataForward);
 
                         BaseData data;
                         var dataPoints = new List<BaseData>();
-                        while (_streamStore[i].Queue.TryDequeue(out data))
+                        while (_streamStores[i].Queue.TryDequeue(out data))
                         {
                             dataPoints.Add(data);
                         }
@@ -308,10 +312,18 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             var tick = point as Tick;
                             if (tick != null)
                             {
-                                // Update our internal counter
-                                _streamStore[i].Update(tick);
-                                // Update the realtime price stream value
-                                _realtimePrices[i] = point.Value;
+                                if (_subscriptions[i].Resolution == Resolution.Tick)
+                                {
+                                    // put ticks directly into the bridge
+                                    AddSingleItemToBridge(tick, i);
+                                }
+                                else
+                                {
+                                    // Update our internal counter
+                                    _streamStores[i].Update(tick);
+                                    // Update the realtime price stream value
+                                    _realtimePrices[i] = point.Value;
+                                }
                             }
                             else
                             {
@@ -320,10 +332,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                                 //If its not a tick, inject directly into bridge for this symbol:
                                 //Bridge[i].Enqueue(new List<BaseData> {point});
-                                Bridge.Add(new TimeSlice(DateTime.Now, new Dictionary<int, List<BaseData>>
-                                {
-                                    {i, new List<BaseData> {point}}
-                                }));
+                                AddSingleItemToBridge(point, i);
                             }
                         }
                     }
@@ -390,9 +399,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                                 // don't emit data in the future
                                 if (data.EndTime < DateTime.Now)
                                 {
-                                    _streamStore[i].Update(data); //Update bar builder.
-                                    _realtimePrices[i] = data.Value; //Update realtime price value.
-                                    needsMoveNext[i] = true;
+                                    if (_subscriptions[i].Resolution == Resolution.Tick)
+                                    {
+                                        // put ticks directly into the bridge
+                                        AddSingleItemToBridge(data, i);
+                                    }
+                                    else
+                                    {
+                                        _streamStores[i].Update(data); //Update bar builder.
+                                        _realtimePrices[i] = data.Value; //Update realtime price value.
+                                        needsMoveNext[i] = true;
+                                    }
                                 }
                                 else
                                 {
@@ -464,11 +481,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     _dataQueue.Unsubscribe(_job, symbols);
                 }
                 _exitTriggered = true;
-                
-                foreach (var bridge in _bridge)
-                {
-                    bridge.Clear();
-                }
+                Bridge.Dispose();
             }
         }
 
@@ -490,6 +503,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 }
             }
             return symbols;
+        }
+
+        private void AddSingleItemToBridge(BaseData tick, int i)
+        {
+            Bridge.Add(new TimeSlice(tick.EndTime, new Dictionary<int, List<BaseData>>
+            {
+                {i, new List<BaseData> {tick}}
+            }));
         }
     }
 }

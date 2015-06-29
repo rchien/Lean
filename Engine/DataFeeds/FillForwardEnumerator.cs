@@ -210,7 +210,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return true;
             }
 
-            // we're trying compute the desired emit time and then we're going to compare to the next
+            // This next if/else block's entire job is to locate the market open time following previous.EndTime
+            // we'll then add the ff resolution to that time to produce the nextFillForwardTime, which is the time
+            // we need to emit our next piece of data at
 
             DateTime nextFillForwardTime;
             var frontierDate = previous.EndTime.Date;
@@ -221,7 +223,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
             else
             {
-                // the previous was before market open on the day we want to emit, so we need to go to today's market open
+                // find the next market open time, we use -1 here because the GetNextOpenDataAfter will start with +1, so if frontierDate
+                // is already open, the frontierDate will be returned, but if frontierDate is say, saturday at midnight (daily case),
+                // then we'll need to zoom forward to monday at market open
                 nextFillForwardTime = GetMarketOpen(GetNextOpenDateAfter(frontierDate.Date.AddDays(-1))) + _fillForwardResolution;
             }
 

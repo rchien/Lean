@@ -73,6 +73,10 @@ namespace QuantConnect.Lean.Engine.RealTime
 
                 try
                 {
+                    if (_logging)
+                    {
+                        Log.Trace("RealTimeEvent.Scan(): Eventhandler Called: " + time.ToString("u"));
+                    }
                     _callback();
                 }
                 catch (Exception err)

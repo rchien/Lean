@@ -390,7 +390,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>True if we got a new date from the enumerator, false if it's exhausted, or in live mode if we're already at today</returns>
         private bool TryGetNextDate(out DateTime date)
         {
-            if (_isLiveMode && _tradeableDates.Current > DateTime.Today)
+            if (_isLiveMode && _tradeableDates.Current >= DateTime.Today)
             {
                 // special behavior for live mode, don't advance past today
                 date = _tradeableDates.Current;
