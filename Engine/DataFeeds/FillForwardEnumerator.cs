@@ -212,29 +212,27 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             // we're trying compute the desired emit time and then we're going to compare to the next
 
-            var nextFillForwardTime = previous.EndTime.Date;
-            if (previous.EndTime > GetMarketOpen(nextFillForwardTime) - _fillForwardResolution)
+            DateTime nextFillForwardTime;
+            var frontierDate = previous.EndTime.Date;
+            if (previous.EndTime > GetMarketOpen(frontierDate) - _fillForwardResolution)
             {
                 // after market hours on the same day, advance to the next emit time at market open
-                nextFillForwardTime = GetMarketOpen(GetNextOpenDateAfter(barAfterPreviousEndTime.Date)) + _fillForwardResolution;
+                nextFillForwardTime = GetMarketOpen(GetNextOpenDateAfter(frontierDate)) + _fillForwardResolution;
             }
             else
             {
-                // the previous was before market open on the day we want to emit, so we need to go
-                // to today's market open
-                nextFillForwardTime = GetMarketOpen(nextFillForwardTime) + _fillForwardResolution;
+                // the previous was before market open on the day we want to emit, so we need to go to today's market open
+                nextFillForwardTime = GetMarketOpen(GetNextOpenDateAfter(frontierDate.Date.AddDays(-1))) + _fillForwardResolution;
             }
 
-            // special case for daily, we need to emit a midnight bar even though markets are closed
-            if (_dataResolution == Time.OneDay & nextFillForwardTime.Date > previous.EndTime.Date)
+            if (_dataResolution == Time.OneDay)
             {
-                // if daily and if we've crossed over to a new date, emit a daily bar
-                var dailyBarEnd = nextFillForwardTime.Date;
-                if (dailyBarEnd < next.EndTime)
+                // special case for daily, we need to emit a midnight bar even though markets are closed
+                var dailyBarEnd = GetNextOpenDateAfter(previous.Time.Date) + Time.OneDay;
+                if (dailyBarEnd < nextFillForwardTime)
                 {
-                    fillForward = previous.Clone(true);
-                    fillForward.Time = dailyBarEnd - Time.OneDay;
-                    return true;
+                    // only emit the midnight bar if it's the next bar to be emitted
+                    nextFillForwardTime = dailyBarEnd;
                 }
             }
 

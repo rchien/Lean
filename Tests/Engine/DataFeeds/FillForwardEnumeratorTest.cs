@@ -607,10 +607,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var reference = new DateTime(2015, 6, 23);
             var data = new BaseData[]
             {
-                // thurs 6/24
+                // tues 6/23
                 new TradeBar{Value = 0, Time = reference, Period = dataResolution},
-                // fri 6/26
-                new TradeBar{Value = 1, Time = reference.AddDays(3), Period = dataResolution},
+                // wed 7/1
+                new TradeBar{Value = 1, Time = reference.AddDays(8), Period = dataResolution},
             }.ToList();
             var enumerator = data.GetEnumerator();
 
@@ -620,18 +620,26 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, ffResolution, isExtendedMarketHours, data.Last().EndTime, dataResolution);
 
 
-            int count = 0;
+            int dailyBars = 0;
+            int hourlyBars = 0;
             while (fillForwardEnumerator.MoveNext())
             {
-                if (fillForwardEnumerator.Current.EndTime.TimeOfDay == TimeSpan.Zero)
+                Console.WriteLine(fillForwardEnumerator.Current.EndTime);
+                if (fillForwardEnumerator.Current.Time.TimeOfDay == TimeSpan.Zero)
                 {
-                    // add up all the daily bars
-                    count++;
+                    dailyBars++;
+                }
+                else
+                {
+                    hourlyBars++;
                 }
             }
 
-            // we expect 4 daily bars here
-            Assert.AreEqual(4, count);
+            // we expect 7 daily bars here, beginning tues, wed, thurs, fri, mon, tues, wed
+            Assert.AreEqual(7, dailyBars);
+
+            // we expect 6 days worth of ff hourly bars at 7 bars a day
+            Assert.AreEqual(42, hourlyBars);
         }
     }
 }
