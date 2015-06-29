@@ -156,7 +156,6 @@
     <Compile Include="DataFeeds\Transport\LocalFileSubscriptionStreamReader.cs" />
     <Compile Include="DataFeeds\Transport\RemoteFileSubscriptionStreamReader.cs" />
     <Compile Include="DataFeeds\Transport\RestSubscriptionStreamReader.cs" />
-    <Compile Include="DataStream.cs" />
     <Compile Include="LeanEngineAlgorithmHandlers.cs" />
     <Compile Include="LeanEngineSystemHandlers.cs" />
     <Compile Include="RealTime\RealTimeEvent.cs" />
