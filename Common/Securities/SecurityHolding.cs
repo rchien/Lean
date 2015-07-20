@@ -175,10 +175,10 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Math.Abs(HoldingsValue);
+                return AbsoluteHoldingsCost + (_price - AveragePrice)*Quantity;
             }
         }
-        
+
         /// <summary>
         /// Boolean flat indicating if we hold any of the security
         /// </summary>

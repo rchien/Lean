@@ -522,16 +522,50 @@ namespace QuantConnect.Algorithm
                     }
                 }
             }
-            
+
+            //Only place trade if we've got > 1 share to order.
+            var quantity = CalculateOrderQuantity(symbol, percentage);
+            if (Math.Abs(quantity) > 0)
+            {
+                MarketOrder(symbol, quantity, false, tag);
+            }
+        }
+
+        /// <summary>
+        /// Calculate the order quantity to achieve target-percent holdings.
+        /// </summary>
+        /// <param name="symbol">Security object we're asking for</param>
+        /// <param name="target">Target percentag holdings</param>
+        /// <returns>Order quantity to achieve this percentage</returns>
+        public int CalculateOrderQuantity(string symbol, double target)
+        {
+            return CalculateOrderQuantity(symbol, (decimal)target);
+        }
+
+        /// <summary>
+        /// Calculate the order quantity to achieve target-percent holdings.
+        /// </summary>
+        /// <param name="symbol">Security object we're asking for</param>
+        /// <param name="target">Target percentag holdings</param>
+        /// <returns>Order quantity to achieve this percentage</returns>
+        public int CalculateOrderQuantity(string symbol, decimal target)
+        {
+            var zeroedHoldings = 0m;
             //Find delta in margin to trade:
+            var security = Securities[symbol];
             // 1. Eg. 50% * $100k = $50k Target        2. Eg. 200% * 100k = $200k Target
-            var targetPortfolioValue = percentage*Portfolio.TotalPortfolioValue;
+            var targetPortfolioValue = target * Portfolio.TotalPortfolioValue;
             // 1. Eg. $0 Holdings Currently.           2. Eg. -$50k Currently.
-            var currentPortfolioValue = security.Holdings.HoldingsValue;
+            var currentPortfolioValue = security.Holdings.AbsoluteHoldingsValue;
+            if (security.Holdings.IsShort) currentPortfolioValue *= -1;
+
+            //In rare short conditions when short holding value is near zero, add the price to the final quantity.
+            if (currentPortfolioValue == 0 && security.Holdings.IsShort && target > 0) zeroedHoldings = security.Holdings.AbsoluteQuantity;
+
             // Delta in holdings value:
             var deltaRequired = targetPortfolioValue - currentPortfolioValue;
             //Convert value delta back to unlevered margin move:
-            var deltaMarginToTrade = Math.Abs(deltaRequired/security.MarginModel.GetLeverage(security));
+            var deltaMarginToTrade = Math.Abs(deltaRequired / security.MarginModel.GetLeverage(security));
             //Adjust direction based on delta required:
             var direction = (deltaRequired > 0) ? OrderDirection.Buy : OrderDirection.Sell;
 
@@ -545,10 +579,10 @@ namespace QuantConnect.Algorithm
             var marginRequiredForSingleShare = security.MarginModel.GetInitialMarginRequiredForOrder(security, marketOrder);
 
             // we can't do anything if we don't have data yet
-            if (security.Price == 0) return;
+            if (security.Price == 0) return 0;
 
             // we can't even afford one more share
-            if (deltaMarginToTrade < marginRequiredForSingleShare) return;
+            if (deltaMarginToTrade < marginRequiredForSingleShare) return 0;
 
             // we want marginRequired to end up between this and marginRemaining
             var marginRequiredLowerThreshold = deltaMarginToTrade - marginRequiredForSingleShare;
@@ -558,13 +592,13 @@ namespace QuantConnect.Algorithm
             var marginRequired = marginRequiredForSingleShare;
             while (marginRequired > deltaMarginToTrade || marginRequired < marginRequiredLowerThreshold)
             {
-                var marginPerShare = marginRequired/quantity;
-                quantity = (int) Math.Truncate(deltaMarginToTrade/marginPerShare);
+                var marginPerShare = marginRequired / quantity;
+                quantity = (int)Math.Truncate(deltaMarginToTrade / marginPerShare);
                 marketOrder = new MarketOrder(symbol, quantity, Time, type: security.Type);
                 if (quantity == 0)
                 {
                     // can't order anything
-                    return;
+                    return 0;
                 }
                 marginRequired = security.MarginModel.GetInitialMarginRequiredForOrder(security, marketOrder);
 
@@ -575,7 +609,7 @@ namespace QuantConnect.Algorithm
             // nothing to change
             if (quantity == 0)
             {
-                return;
+                return 0;
             }
 
             // adjust for going short
@@ -583,8 +617,7 @@ namespace QuantConnect.Algorithm
             {
                 quantity *= -1;
             }
-
-            MarketOrder(symbol, quantity, false, tag);
+            return quantity + (int)zeroedHoldings;
         }
 
         /// <summary>
